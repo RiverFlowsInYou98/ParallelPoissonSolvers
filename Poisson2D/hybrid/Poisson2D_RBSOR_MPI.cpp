@@ -9,7 +9,7 @@
 
 // Poisson's equation (-(u_xx+u_yy) = RHS) in 2D with Dirichlet boundary conditions
 // Discretized with finite differences
-// Red-Black Successive Over-Relaxation (SOR) method
+// Red-Black Successive Over-Relaxation (SOR) Iteration
 // parallelized with domain decomposition, MPI
 
 double exact_solution_func(double x, double y)
@@ -191,10 +191,10 @@ int main(int argc, char **argv)
     const double a1 = -1.0, b1 = 1.0, a2 = -1.5, b2 = 2.5;   // [a1, b1] x [a2, b2]
     const size_t Nx = 367, Ny = 491;                         // Grid size in x and y direction
     const size_t numPoints_x = Nx + 1, numPoints_y = Ny + 1; // Number of points in x and y direction
-    const double tolerance = 1e-15;                          // Tolerance for convergence
+    const double tolerance = 1e-14;                          // Tolerance for convergence
     const unsigned int maxIter = 100000000;                  // Maximum number of iterations
-    const double dx = (b1 - a1) / Nx, dy = (b2 - a2) / Ny;
-    const double omega = 1.5; // Relaxation factor for SOR
+    const double dx = (b1 - a1) / Nx, dy = (b2 - a2) / Ny;   // Grid spacing in x and y direction
+    const double omega = 1.5;                                // Relaxation factor for SOR
 
     // Initialize MPI and create Cartesian topology for the processes
     MPIEnv env;
@@ -218,7 +218,7 @@ int main(int argc, char **argv)
 
     // Initialize the iteration
     unsigned int iter = 0;
-    double global_maxAbsDiff;
+    double maxAbsDiff, global_maxAbsDiff;
     double gs_update, sor_update;
     // Preparations for exchanging boundary data
     std::vector<double> received_top_boundary_data(subdomain.ny),
@@ -231,6 +231,7 @@ int main(int argc, char **argv)
 
     // Start measuring time
     auto start_time = std::chrono::high_resolution_clock::now();
+
     do
     {
         if (env.rank == 0 && (iter == 1 || (iter % 1000 == 0 && iter != 0)))
@@ -238,8 +239,7 @@ int main(int argc, char **argv)
             printf("Iteration %8u: max absolute difference = %e\n", iter, global_maxAbsDiff);
         }
 
-        double maxAbsDiff = 0.0;
-
+        maxAbsDiff = 0.0;
         // Red-Black SOR iteration for 2D
         for (int color = 0; color <= 1; color++)
         {
@@ -258,7 +258,7 @@ int main(int argc, char **argv)
                                      dx * dx * (sol[idx(i, j - 1)] + sol[idx(i, j + 1)]) +
                                      dx * dx * dy * dy * RHS[idx(i, j)]) /
                                     (2 * (dx * dx + dy * dy));
-                        sor_update = omega * gs_update + (1 - omega) * sol[idx(i, j)];
+                        sor_update = sol[idx(i, j)] + omega * (gs_update - sol[idx(i, j)]);
                         maxAbsDiff = std::max(maxAbsDiff, std::fabs(sol[idx(i, j)] - sor_update));
                         sol[idx(i, j)] = sor_update;
                     }
@@ -279,7 +279,7 @@ int main(int argc, char **argv)
                                          dx * dx * (received_left_boundary_data[0] + sol[idx(0, 1)]) +
                                          dx * dx * dy * dy * RHS[idx(0, 0)]) /
                                         (2 * (dx * dx + dy * dy));
-                            sor_update = omega * gs_update + (1 - omega) * sol[idx(0, 0)];
+                            sor_update = sol[idx(0, 0)] + omega * (gs_update - sol[idx(0, 0)]);
                             maxAbsDiff = std::max(maxAbsDiff, std::fabs(sol[idx(0, 0)] - sor_update));
                             sol[idx(0, 0)] = sor_update;
                         }
@@ -289,7 +289,7 @@ int main(int argc, char **argv)
                                          dx * dx * (sol[idx(0, subdomain.ny - 2)] + received_right_boundary_data[0]) +
                                          dx * dx * dy * dy * RHS[idx(0, subdomain.ny - 1)]) /
                                         (2 * (dx * dx + dy * dy));
-                            sor_update = omega * gs_update + (1 - omega) * sol[idx(0, subdomain.ny - 1)];
+                            sor_update = sol[idx(0, subdomain.ny - 1)] + omega * (gs_update - sol[idx(0, subdomain.ny - 1)]);
                             maxAbsDiff = std::max(maxAbsDiff, std::fabs(sol[idx(0, subdomain.ny - 1)] - sor_update));
                             sol[idx(0, subdomain.ny - 1)] = sor_update;
                         }
@@ -299,7 +299,7 @@ int main(int argc, char **argv)
                                          dx * dx * (sol[idx(0, j - 1)] + sol[idx(0, j + 1)]) +
                                          dx * dx * dy * dy * RHS[idx(0, j)]) /
                                         (2 * (dx * dx + dy * dy));
-                            sor_update = omega * gs_update + (1 - omega) * sol[idx(0, j)];
+                            sor_update = sol[idx(0, j)] + omega * (gs_update - sol[idx(0, j)]);
                             maxAbsDiff = std::max(maxAbsDiff, std::fabs(sol[idx(0, j)] - sor_update));
                             sol[idx(0, j)] = sor_update;
                         }
@@ -319,7 +319,7 @@ int main(int argc, char **argv)
                                          dx * dx * (received_left_boundary_data[subdomain.nx - 1] + sol[idx(subdomain.nx - 1, 1)]) +
                                          dx * dx * dy * dy * RHS[idx(subdomain.nx - 1, 0)]) /
                                         (2 * (dx * dx + dy * dy));
-                            sor_update = omega * gs_update + (1 - omega) * sol[idx(subdomain.nx - 1, 0)];
+                            sor_update = sol[idx(subdomain.nx - 1, 0)] + omega * (gs_update - sol[idx(subdomain.nx - 1, 0)]);
                             maxAbsDiff = std::max(maxAbsDiff, std::fabs(sol[idx(subdomain.nx - 1, 0)] - sor_update));
                             sol[idx(subdomain.nx - 1, 0)] = sor_update;
                         }
@@ -329,7 +329,7 @@ int main(int argc, char **argv)
                                          dx * dx * (sol[idx(subdomain.nx - 1, subdomain.ny - 2)] + received_right_boundary_data[subdomain.nx - 1]) +
                                          dx * dx * dy * dy * RHS[idx(subdomain.nx - 1, subdomain.ny - 1)]) /
                                         (2 * (dx * dx + dy * dy));
-                            sor_update = omega * gs_update + (1 - omega) * sol[idx(subdomain.nx - 1, subdomain.ny - 1)];
+                            sor_update = sol[idx(subdomain.nx - 1, subdomain.ny - 1)] + omega * (gs_update - sol[idx(subdomain.nx - 1, subdomain.ny - 1)]);
                             maxAbsDiff = std::max(maxAbsDiff, std::fabs(sol[idx(subdomain.nx - 1, subdomain.ny - 1)] - sor_update));
                             sol[idx(subdomain.nx - 1, subdomain.ny - 1)] = sor_update;
                         }
@@ -339,7 +339,7 @@ int main(int argc, char **argv)
                                          dx * dx * (sol[idx(subdomain.nx - 1, j - 1)] + sol[idx(subdomain.nx - 1, j + 1)]) +
                                          dx * dx * dy * dy * RHS[idx(subdomain.nx - 1, j)]) /
                                         (2 * (dx * dx + dy * dy));
-                            sor_update = omega * gs_update + (1 - omega) * sol[idx(subdomain.nx - 1, j)];
+                            sor_update = sol[idx(subdomain.nx - 1, j)] + omega * (gs_update - sol[idx(subdomain.nx - 1, j)]);
                             maxAbsDiff = std::max(maxAbsDiff, std::fabs(sol[idx(subdomain.nx - 1, j)] - sor_update));
                             sol[idx(subdomain.nx - 1, j)] = sor_update;
                         }
@@ -357,7 +357,7 @@ int main(int argc, char **argv)
                                      dx * dx * (received_left_boundary_data[i] + sol[idx(i, 1)]) +
                                      dx * dx * dy * dy * RHS[idx(i, 0)]) /
                                     (2 * (dx * dx + dy * dy));
-                        sor_update = omega * gs_update + (1 - omega) * sol[idx(i, 0)];
+                        sor_update = sol[idx(i, 0)] + omega * (gs_update - sol[idx(i, 0)]);
                         maxAbsDiff = std::max(maxAbsDiff, std::fabs(sol[idx(i, 0)] - sor_update));
                         sol[idx(i, 0)] = sor_update;
                     }
@@ -374,7 +374,7 @@ int main(int argc, char **argv)
                                      dx * dx * (sol[idx(i, subdomain.ny - 2)] + received_right_boundary_data[i]) +
                                      dx * dx * dy * dy * RHS[idx(i, subdomain.ny - 1)]) /
                                     (2 * (dx * dx + dy * dy));
-                        sor_update = omega * gs_update + (1 - omega) * sol[idx(i, subdomain.ny - 1)];
+                        sor_update = sol[idx(i, subdomain.ny - 1)] + omega * (gs_update - sol[idx(i, subdomain.ny - 1)]);
                         maxAbsDiff = std::max(maxAbsDiff, std::fabs(sol[idx(i, subdomain.ny - 1)] - sor_update));
                         sol[idx(i, subdomain.ny - 1)] = sor_update;
                     }

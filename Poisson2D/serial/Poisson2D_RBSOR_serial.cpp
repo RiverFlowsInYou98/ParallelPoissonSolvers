@@ -25,9 +25,9 @@ int main()
     const double a1 = -1.0, b1 = 1.0, a2 = -1.5, b2 = 2.5;   // [a1, b1] x [a2, b2]
     const size_t Nx = 367, Ny = 491;                         // Grid size in x and y direction
     const size_t numPoints_x = Nx + 1, numPoints_y = Ny + 1; // Number of points in x and y direction
-    const double tolerance = 1e-15;                          // Tolerance for convergence
+    const double tolerance = 1e-14;                          // Tolerance for convergence
     const unsigned int maxIter = 100000000;                  // Maximum number of iterations
-    const double dx = (b1 - a1) / Nx, dy = (b2 - a2) / Ny;
+    const double dx = (b1 - a1) / Nx, dy = (b2 - a2) / Ny;   // Grid spacing in x and y direction
     const double omega = 1.5;                                // Relaxation factor for SOR
 
     std::vector<std::vector<double>> sol(numPoints_x, std::vector<double>(numPoints_y)),
@@ -78,8 +78,8 @@ int main()
         {
             printf("Iteration %8u: max absolute difference = %e\n", iter, maxAbsDiff);
         }
-        maxAbsDiff = 0.0;
 
+        maxAbsDiff = 0.0;
         // Red-Black SOR iteration for 2D
         for (int color = 0; color <= 1; color++)
         {
@@ -93,9 +93,9 @@ int main()
                                             dx * dx * (sol[i][j - 1] + sol[i][j + 1]) +
                                             dx * dx * dy * dy * RHS[i][j]) /
                                            (2 * (dx * dx + dy * dy));
-                        double new_val = sol[i][j] + omega * (gs_update - sol[i][j]);
-                        maxAbsDiff = std::max(maxAbsDiff, std::fabs(new_val - sol[i][j]));
-                        sol[i][j] = new_val;
+                        double sor_update = sol[i][j] + omega * (gs_update - sol[i][j]);
+                        maxAbsDiff = std::max(maxAbsDiff, std::fabs(sor_update - sol[i][j]));
+                        sol[i][j] = sor_update;
                     }
                 }
             }
