@@ -138,13 +138,12 @@ void applyDirichletBC(const MPIEnv &env, const Subdomain &subdomain, std::vector
     }
 }
 
-void startExchangeBoundaryData(const MPIEnv &env, const Subdomain &subdomain, const std::vector<double> &local_sol,
+void startExchangeBoundaryDataNonblocking(const MPIEnv &env, const Subdomain &subdomain, const std::vector<double> &local_sol,
                                std::vector<double> &received_top_boundary_data, std::vector<double> &received_bottom_boundary_data,
                                std::vector<double> &received_left_boundary_data, std::vector<double> &received_right_boundary_data,
                                MPI_Datatype column_data_type, std::vector<MPI_Request> &requests)
 {
     int request_count = 0;
-
     // Start non-blocking receive
     if (env.top_neighbor != MPI_PROC_NULL)
         MPI_Irecv(&received_top_boundary_data[0], subdomain.ny, MPI_DOUBLE, env.top_neighbor, 0, env.cart_comm, &requests[request_count++]);
@@ -165,7 +164,7 @@ void startExchangeBoundaryData(const MPIEnv &env, const Subdomain &subdomain, co
         MPI_Isend(&local_sol[idx(0, subdomain.ny - 1)], 1, column_data_type, env.right_neighbor, 0, env.cart_comm, &requests[request_count++]);
 }
 
-void completeExchangeBoundaryData(std::vector<MPI_Request> &requests)
+void completeExchangeBoundaryDataNonblocking(std::vector<MPI_Request> &requests)
 {
     MPI_Waitall(requests.size(), &requests[0], MPI_STATUSES_IGNORE);
 }
@@ -245,7 +244,7 @@ int main(int argc, char **argv)
         // Red-Black SOR iteration for 2D
         for (int color = 0; color <= 1; color++)
         {
-            startExchangeBoundaryData(env, subdomain, sol, received_top_boundary_data, received_bottom_boundary_data,
+            startExchangeBoundaryDataNonblocking(env, subdomain, sol, received_top_boundary_data, received_bottom_boundary_data,
                                       received_left_boundary_data, received_right_boundary_data, column_data_type, requests);
 
             // Update interior points in each rank
@@ -267,7 +266,7 @@ int main(int argc, char **argv)
             }
 
             // Complete boundary data exchange
-            completeExchangeBoundaryData(requests);
+            completeExchangeBoundaryDataNonblocking(requests);
 
             // Update boundary points in each rank
             // Top boundary (if not at domain top boundary)
