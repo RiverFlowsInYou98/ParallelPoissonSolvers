@@ -8,7 +8,7 @@
 // Poisson's equation (-(u_xx+u_yy) = RHS) in 2D with Dirichlet boundary conditions
 // Discretized with finite differences
 // Red-Black Successive Over-Relaxation (SOR) Iteration
-// serial implementation
+// Serial implementation
 
 double exact_solution_func(double x, double y)
 {
@@ -55,16 +55,17 @@ int main()
     }
 
     // Apply Dirichlet boundary conditions
-    for (size_t i = 0; i < numPoints_x; ++i)
-    {
-        sol[i][0] = exact_solution[i][0];
-        sol[i][Ny] = exact_solution[i][Ny];
-    }
     for (size_t j = 0; j < numPoints_y; ++j)
     {
         sol[0][j] = exact_solution[0][j];
         sol[Nx][j] = exact_solution[Nx][j];
     }
+    for (size_t i = 0; i < numPoints_x; ++i)
+    {
+        sol[i][0] = exact_solution[i][0];
+        sol[i][Ny] = exact_solution[i][Ny];
+    }
+    
 
     unsigned int iter = 0;
     double maxAbsDiff = 0.0;
