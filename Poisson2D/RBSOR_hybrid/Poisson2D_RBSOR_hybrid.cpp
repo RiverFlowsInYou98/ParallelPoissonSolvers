@@ -13,7 +13,7 @@
 // Poisson's equation (-(u_xx+u_yy) = RHS) in 2D with Dirichlet boundary conditions
 // Discretized with finite differences
 // Red-Black Successive Over-Relaxation (SOR) Iteration
-// parallelized with domain decomposition, MPI
+// Hybrid parallelization with OpenMP and domain decomposition, MPI 
 
 double exact_solution_func(double x, double y)
 {
