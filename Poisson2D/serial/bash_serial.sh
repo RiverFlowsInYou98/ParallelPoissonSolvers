@@ -4,6 +4,7 @@
 #SBATCH --time=48:00:00
 
 #SBATCH -N 1
+#SBATCH --constraint=48core|intel|cascade|edr
 #SBATCH -n 1
 
 # Specify a job name:
