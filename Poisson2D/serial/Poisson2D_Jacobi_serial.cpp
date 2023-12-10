@@ -25,7 +25,7 @@ int main()
     const double a1 = -1.0, b1 = 1.0, a2 = -1.0, b2 = 1.0;   // [a1, b1] x [a2, b2]
     const size_t Nx = 100, Ny = 100;                         // Grid size in x and y direction
     const size_t numPoints_x = Nx + 1, numPoints_y = Ny + 1; // Number of points in x and y direction
-    const double tolerance = 1e-12;                          // Tolerance for convergence
+    const double tolerance = 1e-14;                          // Tolerance for convergence
     const unsigned int maxIter = 100000000;                  // Maximum number of iterations
     const double dx = (b1 - a1) / Nx, dy = (b2 - a2) / Ny;
     
