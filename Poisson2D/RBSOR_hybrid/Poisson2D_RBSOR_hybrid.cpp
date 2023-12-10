@@ -13,7 +13,7 @@
 // Poisson's equation (-(u_xx+u_yy) = RHS) in 2D with Dirichlet boundary conditions
 // Discretized with finite differences
 // Red-Black Successive Over-Relaxation (SOR) Iteration
-// Hybrid parallelization with OpenMP and domain decomposition, MPI 
+// Hybrid parallelization with OpenMP and domain decomposition, MPI
 
 double exact_solution_func(double x, double y)
 {
@@ -216,6 +216,9 @@ int main(int argc, char **argv)
     const unsigned int maxIter = 100000000;                  // Maximum number of iterations
     const double dx = (b1 - a1) / Nx, dy = (b2 - a2) / Ny;   // Grid spacing in x and y direction
     const double omega = 1.5;                                // Relaxation factor for SOR
+    // Optimal relaxation factor for this problem
+    // rho = (cos(PI / Nx) + (dx * dx / dy * dy) * cos(PI / Ny)) / (1 + (dx * dx / dy * dy));
+    // omega = 2.0 / (1.0 + sqrt(1.0 - rho * rho));
 
     // Initialize MPI and create Cartesian topology for the processes
     MPIEnv env;
@@ -268,8 +271,8 @@ int main(int argc, char **argv)
             startExchangeBoundaryDataNonblocking(env, subdomain, sol, received_top_boundary_data, received_bottom_boundary_data,
                                                  received_left_boundary_data, received_right_boundary_data, column_data_type, requests);
 
-            // Update interior points in each rank
-            #pragma omp parallel for reduction(max : maxAbsDiff) private(gs_update, sor_update)
+// Update interior points in each rank
+#pragma omp parallel for reduction(max : maxAbsDiff) private(gs_update, sor_update)
             for (int i = 1; i < subdomain.nx - 1; ++i)
             {
                 for (int j = 1; j < subdomain.ny - 1; ++j)
