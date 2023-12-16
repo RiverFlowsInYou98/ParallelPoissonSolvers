@@ -48,6 +48,20 @@ struct Subdomain
 
 void initializeMPI(int argc, char **argv, MPIEnv &env)
 {
+    /*
+    2D Cartesian topology of processes
+    ^ x
+    |
+    -----------------------------------------------------------------
+    |  rank12 (3,0) |  rank13 (3,1) |  rank14 (3,2) |  rank15 (3,3) |
+    -----------------------------------------------------------------
+    |  rank8  (2,0) |  rank9  (2,1) |  rank10 (2,2) |  rank11 (2,3) |
+    -----------------------------------------------------------------
+    |  rank4  (1,0) |  rank5  (1,1) |  rank6  (1,2) |  rank7  (1,3) | 
+    -----------------------------------------------------------------
+    |  rank0  (0,0) |  rank1  (0,1) |  rank2  (0,2) |  rank3  (0,3) |
+    -------------------------------------------------------------------> y
+    */
     MPI_Init(&argc, &argv);
     MPI_Comm_rank(MPI_COMM_WORLD, &env.rank);
     MPI_Comm_size(MPI_COMM_WORLD, &env.size);
@@ -227,6 +241,18 @@ int main(int argc, char **argv)
     // Initialize and setup subdomain information
     Subdomain subdomain;
     setupSubdomain(env, subdomain, numPoints_x, numPoints_y);
+    // // Print the rank's message
+    // printf("\nMPI rank %d:\n", env.rank);
+    // if (env.rank == 0)
+    // {
+    //     printf("Number of processes: %d\n", env.size);
+    //     printf("Number of processes in x and y direction: %d, %d\n", env.num_procs_x, env.num_procs_y);
+    // }
+    // printf("Process %d of %d has coordinates (%d, %d) and local size %d x %d = %d, x range [%d, %d], y range [%d, %d]\n",
+    //        env.rank, env.size, env.rank_x, env.rank_y, subdomain.nx, subdomain.ny, subdomain.local_numPoints,
+    //        subdomain.start_x, subdomain.end_x - 1, subdomain.start_y, subdomain.end_y - 1);
+    // printf("Process %d has top neighbor %d, bottom neighbor %d, left neighbor %d and right neighbor %d\n",
+    //        env.rank, env.top_neighbor, env.bottom_neighbor, env.left_neighbor, env.right_neighbor);
 
     // Store local vectors in contiguous memory
     std::vector<double> sol(subdomain.local_numPoints), exact_sol(subdomain.local_numPoints), RHS(subdomain.local_numPoints);
