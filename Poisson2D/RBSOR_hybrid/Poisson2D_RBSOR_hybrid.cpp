@@ -32,10 +32,10 @@ struct MPIEnv
     int size, rank;
     MPI_Comm cart_comm;
     int num_procs_x, num_procs_y, rank_x, rank_y;
-    int top_neighbor, bottom_neighbor, left_neighbor, right_neighbor;
+    int back_neighbor, front_neighbor, left_neighbor, right_neighbor;
     MPIEnv() : size(0), rank(-1), cart_comm(MPI_COMM_NULL),
                num_procs_x(0), num_procs_y(0), rank_x(-1), rank_y(-1),
-               top_neighbor(MPI_PROC_NULL), bottom_neighbor(MPI_PROC_NULL),
+               back_neighbor(MPI_PROC_NULL), front_neighbor(MPI_PROC_NULL),
                left_neighbor(MPI_PROC_NULL), right_neighbor(MPI_PROC_NULL) {}
 };
 
@@ -49,18 +49,21 @@ struct Subdomain
 void initializeMPI(int argc, char **argv, MPIEnv &env)
 {
     /*
-    2D Cartesian topology of processes
-    ^ x
-    |
-    -----------------------------------------------------------------
-    |  rank12 (3,0) |  rank13 (3,1) |  rank14 (3,2) |  rank15 (3,3) |
-    -----------------------------------------------------------------
-    |  rank8  (2,0) |  rank9  (2,1) |  rank10 (2,2) |  rank11 (2,3) |
+    Example of 2D Cartesian topology: 16=4x4 processes
+    x increases from back to front
+    y increases from left to right
+    rank (rank_x, rank_y), rank = num_procs_y * rank_x + rank_y
+    -------------------------------------------------------------------> y
+    |  rank0  (0,0) |  rank1  (0,1) |  rank2  (0,2) |  rank3  (0,3) |
     -----------------------------------------------------------------
     |  rank4  (1,0) |  rank5  (1,1) |  rank6  (1,2) |  rank7  (1,3) | 
     -----------------------------------------------------------------
-    |  rank0  (0,0) |  rank1  (0,1) |  rank2  (0,2) |  rank3  (0,3) |
-    -------------------------------------------------------------------> y
+    |  rank8  (2,0) |  rank9  (2,1) |  rank10 (2,2) |  rank11 (2,3) |
+    -----------------------------------------------------------------
+    |  rank12 (3,0) |  rank13 (3,1) |  rank14 (3,2) |  rank15 (3,3) |
+    -----------------------------------------------------------------
+    |
+    v x
     */
     MPI_Init(&argc, &argv);
     MPI_Comm_rank(MPI_COMM_WORLD, &env.rank);
@@ -74,7 +77,7 @@ void initializeMPI(int argc, char **argv, MPIEnv &env)
     int periods[2] = {0, 0};
     MPI_Cart_create(MPI_COMM_WORLD, 2, dims, periods, 0, &env.cart_comm);
 
-    MPI_Cart_shift(env.cart_comm, 0, 1, &env.top_neighbor, &env.bottom_neighbor);
+    MPI_Cart_shift(env.cart_comm, 0, 1, &env.back_neighbor, &env.front_neighbor);
     MPI_Cart_shift(env.cart_comm, 1, 1, &env.left_neighbor, &env.right_neighbor);
 
     // x, y-coordinate in the process grid
@@ -127,14 +130,14 @@ void setupInitialGuess(const Subdomain &subdomain, std::vector<double> &sol)
 
 void applyDirichletBC(const MPIEnv &env, const Subdomain &subdomain, std::vector<double> &sol, const std::vector<double> &exact_sol)
 {
-    if (env.top_neighbor == MPI_PROC_NULL) // rank_x == 0
+    if (env.back_neighbor == MPI_PROC_NULL) // rank_x == 0
     {
         for (int j = 0; j < subdomain.ny; ++j)
         {
             sol[idx(0, j)] = exact_sol[idx(0, j)];
         }
     }
-    if (env.bottom_neighbor == MPI_PROC_NULL) // rank_x == num_procs_x - 1
+    if (env.front_neighbor == MPI_PROC_NULL) // rank_x == num_procs_x - 1
     {
         for (int j = 0; j < subdomain.ny; ++j)
         {
@@ -158,25 +161,25 @@ void applyDirichletBC(const MPIEnv &env, const Subdomain &subdomain, std::vector
 }
 
 void startExchangeBoundaryDataNonblocking(const MPIEnv &env, const Subdomain &subdomain, const std::vector<double> &local_sol,
-                                          std::vector<double> &received_top_boundary_data, std::vector<double> &received_bottom_boundary_data,
+                                          std::vector<double> &received_back_boundary_data, std::vector<double> &received_front_boundary_data,
                                           std::vector<double> &received_left_boundary_data, std::vector<double> &received_right_boundary_data,
                                           MPI_Datatype column_data_type, std::vector<MPI_Request> &requests)
 {
     int request_count = 0;
     // Start non-blocking receive
-    if (env.top_neighbor != MPI_PROC_NULL)
-        MPI_Irecv(&received_top_boundary_data[0], subdomain.ny, MPI_DOUBLE, env.top_neighbor, 0, env.cart_comm, &requests[request_count++]);
-    if (env.bottom_neighbor != MPI_PROC_NULL)
-        MPI_Irecv(&received_bottom_boundary_data[0], subdomain.ny, MPI_DOUBLE, env.bottom_neighbor, 0, env.cart_comm, &requests[request_count++]);
+    if (env.back_neighbor != MPI_PROC_NULL)
+        MPI_Irecv(&received_back_boundary_data[0], subdomain.ny, MPI_DOUBLE, env.back_neighbor, 0, env.cart_comm, &requests[request_count++]);
+    if (env.front_neighbor != MPI_PROC_NULL)
+        MPI_Irecv(&received_front_boundary_data[0], subdomain.ny, MPI_DOUBLE, env.front_neighbor, 0, env.cart_comm, &requests[request_count++]);
     if (env.left_neighbor != MPI_PROC_NULL)
         MPI_Irecv(&received_left_boundary_data[0], subdomain.nx, MPI_DOUBLE, env.left_neighbor, 0, env.cart_comm, &requests[request_count++]);
     if (env.right_neighbor != MPI_PROC_NULL)
         MPI_Irecv(&received_right_boundary_data[0], subdomain.nx, MPI_DOUBLE, env.right_neighbor, 0, env.cart_comm, &requests[request_count++]);
     // Start non-blocking send
-    if (env.top_neighbor != MPI_PROC_NULL)
-        MPI_Isend(&local_sol[idx(0, 0)], subdomain.ny, MPI_DOUBLE, env.top_neighbor, 0, env.cart_comm, &requests[request_count++]);
-    if (env.bottom_neighbor != MPI_PROC_NULL)
-        MPI_Isend(&local_sol[idx(subdomain.nx - 1, 0)], subdomain.ny, MPI_DOUBLE, env.bottom_neighbor, 0, env.cart_comm, &requests[request_count++]);
+    if (env.back_neighbor != MPI_PROC_NULL)
+        MPI_Isend(&local_sol[idx(0, 0)], subdomain.ny, MPI_DOUBLE, env.back_neighbor, 0, env.cart_comm, &requests[request_count++]);
+    if (env.front_neighbor != MPI_PROC_NULL)
+        MPI_Isend(&local_sol[idx(subdomain.nx - 1, 0)], subdomain.ny, MPI_DOUBLE, env.front_neighbor, 0, env.cart_comm, &requests[request_count++]);
     if (env.left_neighbor != MPI_PROC_NULL)
         MPI_Isend(&local_sol[idx(0, 0)], 1, column_data_type, env.left_neighbor, 0, env.cart_comm, &requests[request_count++]);
     if (env.right_neighbor != MPI_PROC_NULL)
@@ -251,8 +254,8 @@ int main(int argc, char **argv)
     // printf("Process %d of %d has coordinates (%d, %d) and local size %d x %d = %d, x range [%d, %d], y range [%d, %d]\n",
     //        env.rank, env.size, env.rank_x, env.rank_y, subdomain.nx, subdomain.ny, subdomain.local_numPoints,
     //        subdomain.start_x, subdomain.end_x - 1, subdomain.start_y, subdomain.end_y - 1);
-    // printf("Process %d has top neighbor %d, bottom neighbor %d, left neighbor %d and right neighbor %d\n",
-    //        env.rank, env.top_neighbor, env.bottom_neighbor, env.left_neighbor, env.right_neighbor);
+    // printf("Process %d has back neighbor %d, front neighbor %d, left neighbor %d and right neighbor %d\n",
+    //        env.rank, env.back_neighbor, env.front_neighbor, env.left_neighbor, env.right_neighbor);
 
     // Store local vectors in contiguous memory
     std::vector<double> sol(subdomain.local_numPoints), exact_sol(subdomain.local_numPoints), RHS(subdomain.local_numPoints);
@@ -272,8 +275,8 @@ int main(int argc, char **argv)
     double gs_update, sor_update;
     // Preparations for exchanging boundary data
     std::vector<MPI_Request> requests(8, MPI_REQUEST_NULL);
-    std::vector<double> received_top_boundary_data(subdomain.ny),
-        received_bottom_boundary_data(subdomain.ny),
+    std::vector<double> received_back_boundary_data(subdomain.ny),
+        received_front_boundary_data(subdomain.ny),
         received_left_boundary_data(subdomain.nx),
         received_right_boundary_data(subdomain.nx);
     MPI_Datatype column_data_type; // MPI derived data type for column data
@@ -294,7 +297,7 @@ int main(int argc, char **argv)
         // Red-Black SOR iteration for 2D
         for (int color = 0; color <= 1; color++)
         {
-            startExchangeBoundaryDataNonblocking(env, subdomain, sol, received_top_boundary_data, received_bottom_boundary_data,
+            startExchangeBoundaryDataNonblocking(env, subdomain, sol, received_back_boundary_data, received_front_boundary_data,
                                                  received_left_boundary_data, received_right_boundary_data, column_data_type, requests);
 
 // Update interior points in each rank
@@ -320,8 +323,8 @@ int main(int argc, char **argv)
             completeExchangeBoundaryDataNonblocking(requests);
 
             // Update boundary points in each rank
-            // Top boundary (if not at domain top boundary)
-            if (env.top_neighbor != MPI_PROC_NULL)
+            // Back boundary (if not at domain back boundary)
+            if (env.back_neighbor != MPI_PROC_NULL)
             {
                 for (int j = 0; j < subdomain.ny; ++j)
                 {
@@ -329,7 +332,7 @@ int main(int argc, char **argv)
                     {
                         if (j == 0 && env.left_neighbor != MPI_PROC_NULL)
                         {
-                            gs_update = (dy * dy * (received_top_boundary_data[0] + sol[idx(1, 0)]) +
+                            gs_update = (dy * dy * (received_back_boundary_data[0] + sol[idx(1, 0)]) +
                                          dx * dx * (received_left_boundary_data[0] + sol[idx(0, 1)]) +
                                          dx * dx * dy * dy * RHS[idx(0, 0)]) /
                                         (2 * (dx * dx + dy * dy));
@@ -339,7 +342,7 @@ int main(int argc, char **argv)
                         }
                         else if (j == subdomain.ny - 1 && env.right_neighbor != MPI_PROC_NULL)
                         {
-                            gs_update = (dy * dy * (received_top_boundary_data[subdomain.ny - 1] + sol[idx(1, subdomain.ny - 1)]) +
+                            gs_update = (dy * dy * (received_back_boundary_data[subdomain.ny - 1] + sol[idx(1, subdomain.ny - 1)]) +
                                          dx * dx * (sol[idx(0, subdomain.ny - 2)] + received_right_boundary_data[0]) +
                                          dx * dx * dy * dy * RHS[idx(0, subdomain.ny - 1)]) /
                                         (2 * (dx * dx + dy * dy));
@@ -349,7 +352,7 @@ int main(int argc, char **argv)
                         }
                         else if (j > 0 && j < subdomain.ny - 1)
                         {
-                            gs_update = (dy * dy * (received_top_boundary_data[j] + sol[idx(1, j)]) +
+                            gs_update = (dy * dy * (received_back_boundary_data[j] + sol[idx(1, j)]) +
                                          dx * dx * (sol[idx(0, j - 1)] + sol[idx(0, j + 1)]) +
                                          dx * dx * dy * dy * RHS[idx(0, j)]) /
                                         (2 * (dx * dx + dy * dy));
@@ -360,8 +363,8 @@ int main(int argc, char **argv)
                     }
                 }
             }
-            // Bottom boundary (if not at domain bottom boundary)
-            if (env.bottom_neighbor != MPI_PROC_NULL)
+            // Front boundary (if not at domain front boundary)
+            if (env.front_neighbor != MPI_PROC_NULL)
             {
                 for (int j = 0; j < subdomain.ny; ++j)
                 {
@@ -369,7 +372,7 @@ int main(int argc, char **argv)
                     {
                         if (j == 0 && env.left_neighbor != MPI_PROC_NULL)
                         {
-                            gs_update = (dy * dy * (sol[idx(subdomain.nx - 2, 0)] + received_bottom_boundary_data[0]) +
+                            gs_update = (dy * dy * (sol[idx(subdomain.nx - 2, 0)] + received_front_boundary_data[0]) +
                                          dx * dx * (received_left_boundary_data[subdomain.nx - 1] + sol[idx(subdomain.nx - 1, 1)]) +
                                          dx * dx * dy * dy * RHS[idx(subdomain.nx - 1, 0)]) /
                                         (2 * (dx * dx + dy * dy));
@@ -379,7 +382,7 @@ int main(int argc, char **argv)
                         }
                         else if (j == subdomain.ny - 1 && env.right_neighbor != MPI_PROC_NULL)
                         {
-                            gs_update = (dy * dy * (sol[idx(subdomain.nx - 2, subdomain.ny - 1)] + received_bottom_boundary_data[subdomain.ny - 1]) +
+                            gs_update = (dy * dy * (sol[idx(subdomain.nx - 2, subdomain.ny - 1)] + received_front_boundary_data[subdomain.ny - 1]) +
                                          dx * dx * (sol[idx(subdomain.nx - 1, subdomain.ny - 2)] + received_right_boundary_data[subdomain.nx - 1]) +
                                          dx * dx * dy * dy * RHS[idx(subdomain.nx - 1, subdomain.ny - 1)]) /
                                         (2 * (dx * dx + dy * dy));
@@ -389,7 +392,7 @@ int main(int argc, char **argv)
                         }
                         else if (j > 0 && j < subdomain.ny - 1)
                         {
-                            gs_update = (dy * dy * (sol[idx(subdomain.nx - 2, j)] + received_bottom_boundary_data[j]) +
+                            gs_update = (dy * dy * (sol[idx(subdomain.nx - 2, j)] + received_front_boundary_data[j]) +
                                          dx * dx * (sol[idx(subdomain.nx - 1, j - 1)] + sol[idx(subdomain.nx - 1, j + 1)]) +
                                          dx * dx * dy * dy * RHS[idx(subdomain.nx - 1, j)]) /
                                         (2 * (dx * dx + dy * dy));
