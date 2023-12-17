@@ -38,7 +38,8 @@ struct Subdomain
 {
     int nx, ny, local_numPoints;
     int start_x, end_x, start_y, end_y;
-    Subdomain() : nx(0), ny(0), start_x(0), end_x(0), start_y(0), end_y(0) {}
+    Subdomain() : nx(0), ny(0), local_numPoints(0),
+                  start_x(0), end_x(0), start_y(0), end_y(0) {}
 };
 
 void initializeMPI(int argc, char **argv, MPIEnv &env)
