@@ -17,13 +17,13 @@
 lscpu
 echo ""
 
-echo "Solve Poisson equation in 3D with finite difference and Jacobi iteration, serial version"
-g++ -O3 Poisson3D_Jacobi_serial.cpp -o Poisson3D_Jacobi_serial.out
-echo "Compile done"
-./Poisson3D_Jacobi_serial.out
-
-
-# echo "Solve Poisson equation in 3D with finite difference and Red-Black SOR iteration, serial version"
-# g++ -O3 Poisson3D_RBSOR_serial.cpp -o Poisson3D_RBSOR_serial.out
+# echo "Solve Poisson equation in 3D with finite difference and Jacobi iteration, serial version"
+# g++ -O3 Poisson3D_Jacobi_serial.cpp -o Poisson3D_Jacobi_serial.out
 # echo "Compile done"
-# ./Poisson3D_RBSOR_serial.out
+# ./Poisson3D_Jacobi_serial.out
+
+
+echo "Solve Poisson equation in 3D with finite difference and Red-Black SOR iteration, serial version"
+g++ -O3 Poisson3D_RBSOR_serial.cpp -o Poisson3D_RBSOR_serial.out
+echo "Compile done"
+./Poisson3D_RBSOR_serial.out
