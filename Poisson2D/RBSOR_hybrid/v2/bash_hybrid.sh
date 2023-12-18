@@ -5,7 +5,7 @@
 
 ## For my account MaxCpuPerUserLimit=32
 #SBATCH -N 1
-#SBATCH --constraint=48core|intel|cascade|edr
+#SBATCH --constraint=32core|intel|cascade|edr
 #SBATCH --ntasks=16
 #SBATCH --cpus-per-task=2
 #SBATCH --ntasks-per-core=1
