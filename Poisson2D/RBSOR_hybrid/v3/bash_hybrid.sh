@@ -37,20 +37,22 @@ mpic++ -O3 -fopenmp Poisson2D_RBSOR_hybrid.cpp -o Poisson2D_RBSOR_hybrid.out
 echo -e "Compile Done\n"
 
 # Run the application, need to set Nx and Ny
-srun --mpi=pmix ./Poisson2D_RBSOR_hybrid.out 10 10
-echo
-srun --mpi=pmix ./Poisson2D_RBSOR_hybrid.out 20 20
-echo
-srun --mpi=pmix ./Poisson2D_RBSOR_hybrid.out 40 40
-echo
-srun --mpi=pmix ./Poisson2D_RBSOR_hybrid.out 80 80
-echo
-srun --mpi=pmix ./Poisson2D_RBSOR_hybrid.out 160 160
-echo
-srun --mpi=pmix ./Poisson2D_RBSOR_hybrid.out 320 320
-echo
-srun --mpi=pmix ./Poisson2D_RBSOR_hybrid.out 640 640
+# srun --mpi=pmix ./Poisson2D_RBSOR_hybrid.out 10 10
+# echo
+# srun --mpi=pmix ./Poisson2D_RBSOR_hybrid.out 20 20
+# echo
+# srun --mpi=pmix ./Poisson2D_RBSOR_hybrid.out 40 40
+# echo
+# srun --mpi=pmix ./Poisson2D_RBSOR_hybrid.out 80 80
+# echo
+# srun --mpi=pmix ./Poisson2D_RBSOR_hybrid.out 160 160
+# echo
+# srun --mpi=pmix ./Poisson2D_RBSOR_hybrid.out 320 320
+# echo
+# srun --mpi=pmix ./Poisson2D_RBSOR_hybrid.out 640 640
 echo
 srun --mpi=pmix ./Poisson2D_RBSOR_hybrid.out 1280 1280
+# echo
+# srun --mpi=pmix ./Poisson2D_RBSOR_hybrid.out 2560 2560
 
 

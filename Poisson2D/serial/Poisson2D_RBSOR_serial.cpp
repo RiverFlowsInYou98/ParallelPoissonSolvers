@@ -1,4 +1,5 @@
 #include <iostream>
+#include <fstream>
 #include <chrono>
 #include <vector>
 #include <cmath>
@@ -14,19 +15,44 @@
 double exact_solution_func(double x, double y)
 {
     // return x * (x - 2) * sin(y);
+    // return sin(PI * x) * sin(PI * y);
     return sin(x) * sin(y);
 }
 
 double RHS_func(double x, double y) // negative Laplacian of the exact solution
 {
     // return -2 * sin(y) + x * (x - 2) * sin(y);
+    // return 2 * PI * PI * sin(PI * x) * sin(PI * y);
     return 2 * sin(x) * sin(y);
+}
+
+// Function to write data to a CSV file
+void write_to_csv(const std::string &filename, const std::vector<double> &data,
+                  size_t numPoints_x, size_t numPoints_y,
+                  double a1, double a2, double dx, double dy)
+{
+    std::ofstream file(filename);
+
+    // Write column headers
+    file << "x,y,value\n";
+
+    // Write data
+    for (size_t i = 0; i < numPoints_x; ++i)
+    {
+        for (size_t j = 0; j < numPoints_y; ++j)
+        {
+            double x = a1 + i * dx;
+            double y = a2 + j * dy;
+            file << x << "," << y << "," << data[idx(i, j)] << "\n";
+        }
+    }
+    file.close();
 }
 
 int main()
 {
-    const double a1 = -1.0, b1 = 1.0, a2 = -1.0, b2 = 1.0;   // [a1, b1] x [a2, b2]
-    const size_t Nx = 640, Ny = 640;                         // Grid size in x and y direction
+    const double a1 = -1.0, b1 = 1.0, a2 = -1.0, b2 = 1.0;       // [a1, b1] x [a2, b2]
+    const size_t Nx = 2560, Ny = 2560;                         // Grid size in x and y direction
     const size_t numPoints_x = Nx + 1, numPoints_y = Ny + 1; // Number of points in x and y direction
     const double tolerance = 1e-14;                          // Tolerance for convergence
     const unsigned int maxIter = 100000000;                  // Maximum number of iterations
@@ -115,6 +141,11 @@ int main()
 
     printf("Converged after %u iterations with max error %e\n", iter, maxError);
     printf("Elapsed time: %.6f seconds\n", elapsed_time.count());
+
+    // Call the function to write data to CSV
+    // write_to_csv("../../visualization/solution2.csv", sol, numPoints_x, numPoints_y, a1, a2, dx, dy);
+    // write_to_csv("../../visualization/exact_solution2.csv", exact_solution, numPoints_x, numPoints_y, a1, a2, dx, dy);
+    // printf("Data written to files.\n");
 
     return 0;
 }

@@ -8,7 +8,7 @@
 #include <omp.h>
 
 #define PI M_PI
-#define idx(i, j) ((i) * subdomain.ny + (j))
+#define idx(i, j) ((i + 1) * (subdomain.ny + 2) + (j + 1))
 
 // Poisson's equation (-(u_xx+u_yy) = RHS) in 2D with Dirichlet boundary conditions
 // Discretized with finite differences
@@ -41,7 +41,7 @@ struct MPIEnv
 
 struct Subdomain
 {
-    int nx, ny, local_numPoints;
+    int nx, ny;
     int start_x, end_x, start_y, end_y;
     Subdomain() : nx(0), ny(0), start_x(0), end_x(0), start_y(0), end_y(0) {}
 };
@@ -56,7 +56,7 @@ void initializeMPI(int argc, char **argv, MPIEnv &env)
     -------------------------------------------------------------------> y
     |  rank0  (0,0) |  rank1  (0,1) |  rank2  (0,2) |  rank3  (0,3) |
     -----------------------------------------------------------------
-    |  rank4  (1,0) |  rank5  (1,1) |  rank6  (1,2) |  rank7  (1,3) | 
+    |  rank4  (1,0) |  rank5  (1,1) |  rank6  (1,2) |  rank7  (1,3) |
     -----------------------------------------------------------------
     |  rank8  (2,0) |  rank9  (2,1) |  rank10 (2,2) |  rank11 (2,3) |
     -----------------------------------------------------------------
@@ -92,7 +92,6 @@ void setupSubdomain(const MPIEnv &env, Subdomain &subdomain, const size_t numPoi
     int remainder_x = numPoints_x % env.num_procs_x, remainder_y = numPoints_y % env.num_procs_y;
     subdomain.nx = numPoints_x / env.num_procs_x + (env.rank_x < remainder_x ? 1 : 0);
     subdomain.ny = numPoints_y / env.num_procs_y + (env.rank_y < remainder_y ? 1 : 0);
-    subdomain.local_numPoints = subdomain.nx * subdomain.ny;
 
     subdomain.start_x = env.rank_x * (numPoints_x / env.num_procs_x) + std::min(env.rank_x, remainder_x);
     subdomain.start_y = env.rank_y * (numPoints_y / env.num_procs_y) + std::min(env.rank_y, remainder_y);
@@ -160,21 +159,19 @@ void applyDirichletBC(const MPIEnv &env, const Subdomain &subdomain, std::vector
     }
 }
 
-void startExchangeBoundaryDataNonblocking(const MPIEnv &env, const Subdomain &subdomain, const std::vector<double> &local_sol,
-                                          std::vector<double> &received_back_boundary_data, std::vector<double> &received_front_boundary_data,
-                                          std::vector<double> &received_left_boundary_data, std::vector<double> &received_right_boundary_data,
+void startExchangeBoundaryDataNonblocking(const MPIEnv &env, const Subdomain &subdomain, std::vector<double> &local_sol,
                                           MPI_Datatype column_data_type, std::vector<MPI_Request> &requests)
 {
     int request_count = 0;
     // Start non-blocking receive
     if (env.back_neighbor != MPI_PROC_NULL)
-        MPI_Irecv(&received_back_boundary_data[0], subdomain.ny, MPI_DOUBLE, env.back_neighbor, 0, env.cart_comm, &requests[request_count++]);
+        MPI_Irecv(&local_sol[idx(-1, 0)], subdomain.ny, MPI_DOUBLE, env.back_neighbor, 0, env.cart_comm, &requests[request_count++]);
     if (env.front_neighbor != MPI_PROC_NULL)
-        MPI_Irecv(&received_front_boundary_data[0], subdomain.ny, MPI_DOUBLE, env.front_neighbor, 0, env.cart_comm, &requests[request_count++]);
+        MPI_Irecv(&local_sol[idx(subdomain.nx, 0)], subdomain.ny, MPI_DOUBLE, env.front_neighbor, 0, env.cart_comm, &requests[request_count++]);
     if (env.left_neighbor != MPI_PROC_NULL)
-        MPI_Irecv(&received_left_boundary_data[0], subdomain.nx, MPI_DOUBLE, env.left_neighbor, 0, env.cart_comm, &requests[request_count++]);
+        MPI_Irecv(&local_sol[idx(0, -1)], 1, column_data_type, env.left_neighbor, 0, env.cart_comm, &requests[request_count++]);
     if (env.right_neighbor != MPI_PROC_NULL)
-        MPI_Irecv(&received_right_boundary_data[0], subdomain.nx, MPI_DOUBLE, env.right_neighbor, 0, env.cart_comm, &requests[request_count++]);
+        MPI_Irecv(&local_sol[idx(0, subdomain.ny)], 1, column_data_type, env.right_neighbor, 0, env.cart_comm, &requests[request_count++]);
     // Start non-blocking send
     if (env.back_neighbor != MPI_PROC_NULL)
         MPI_Isend(&local_sol[idx(0, 0)], subdomain.ny, MPI_DOUBLE, env.back_neighbor, 0, env.cart_comm, &requests[request_count++]);
@@ -233,9 +230,9 @@ int main(int argc, char **argv)
     const unsigned int maxIter = 100000000;                  // Maximum number of iterations
     const double dx = (b1 - a1) / Nx, dy = (b2 - a2) / Ny;   // Grid spacing in x and y direction
     const double omega = 1.5;                                // Relaxation factor for SOR
-    // Optimal relaxation factor for this problem
-    // rho = (cos(PI / Nx) + (dx * dx / dy * dy) * cos(PI / Ny)) / (1 + (dx * dx / dy * dy));
-    // omega = 2.0 / (1.0 + sqrt(1.0 - rho * rho));
+    // // Optimal relaxation factor for this problem
+    // const double rho = (cos(PI / Nx) + (dx * dx / dy * dy) * cos(PI / Ny)) / (1 + (dx * dx / dy * dy));
+    // const double omega = 2.0 / (1.0 + sqrt(1.0 - rho * rho));
 
     // Initialize MPI and create Cartesian topology for the processes
     MPIEnv env;
@@ -257,8 +254,9 @@ int main(int argc, char **argv)
     // printf("Process %d has back neighbor %d, front neighbor %d, left neighbor %d and right neighbor %d\n",
     //        env.rank, env.back_neighbor, env.front_neighbor, env.left_neighbor, env.right_neighbor);
 
-    // Store local vectors in contiguous memory
-    std::vector<double> sol(subdomain.local_numPoints), exact_sol(subdomain.local_numPoints), RHS(subdomain.local_numPoints);
+    // Store local vectors in contiguous memory, including ghost points
+    std::vector<double> sol((subdomain.nx + 2) * (subdomain.ny + 2)),
+        exact_sol((subdomain.nx + 2) * (subdomain.ny + 2)), RHS((subdomain.nx + 2) * (subdomain.ny + 2));
 
     // Initialize exact solution and RHS
     initializeProblemData(a1, b1, a2, b2, dx, dy, subdomain, exact_sol, RHS);
@@ -275,12 +273,10 @@ int main(int argc, char **argv)
     double gs_update, sor_update;
     // Preparations for exchanging boundary data
     std::vector<MPI_Request> requests(8, MPI_REQUEST_NULL);
-    std::vector<double> received_back_boundary_data(subdomain.ny),
-        received_front_boundary_data(subdomain.ny),
-        received_left_boundary_data(subdomain.nx),
-        received_right_boundary_data(subdomain.nx);
+    const double dx2_recipr = 1.0 / (dx * dx), dy2_recipr = 1.0 / (dy * dy), denom = 2.0 * (dx2_recipr + dy2_recipr);
+    const double w1 = dx2_recipr / denom, w2 = dy2_recipr / denom, w3 = 1 / denom;
     MPI_Datatype column_data_type; // MPI derived data type for column data
-    MPI_Type_vector(subdomain.nx, 1, subdomain.ny, MPI_DOUBLE, &column_data_type);
+    MPI_Type_vector(subdomain.nx, 1, subdomain.ny + 2, MPI_DOUBLE, &column_data_type);
     MPI_Type_commit(&column_data_type);
 
     // Start measuring time
@@ -297,21 +293,19 @@ int main(int argc, char **argv)
         // Red-Black SOR iteration for 2D
         for (int color = 0; color <= 1; color++)
         {
-            startExchangeBoundaryDataNonblocking(env, subdomain, sol, received_back_boundary_data, received_front_boundary_data,
-                                                 received_left_boundary_data, received_right_boundary_data, column_data_type, requests);
+            startExchangeBoundaryDataNonblocking(env, subdomain, sol, column_data_type, requests);
 
-// Update interior points in each rank
-#pragma omp parallel for reduction(max : maxAbsDiff) private(gs_update, sor_update)
+            // Update interior points in each rank
+            #pragma omp parallel for reduction(max : maxAbsDiff) private(gs_update, sor_update)
             for (int i = 1; i < subdomain.nx - 1; ++i)
             {
                 for (int j = 1; j < subdomain.ny - 1; ++j)
                 {
                     if ((subdomain.start_x + i + subdomain.start_y + j) % 2 == color)
                     {
-                        gs_update = (dy * dy * (sol[idx(i - 1, j)] + sol[idx(i + 1, j)]) +
-                                     dx * dx * (sol[idx(i, j - 1)] + sol[idx(i, j + 1)]) +
-                                     dx * dx * dy * dy * RHS[idx(i, j)]) /
-                                    (2 * (dx * dx + dy * dy));
+                        gs_update = w1 * (sol[idx(i - 1, j)] + sol[idx(i + 1, j)]) +
+                                    w2 * (sol[idx(i, j - 1)] + sol[idx(i, j + 1)]) +
+                                    w3 * RHS[idx(i, j)];
                         sor_update = sol[idx(i, j)] + omega * (gs_update - sol[idx(i, j)]);
                         maxAbsDiff = std::max(maxAbsDiff, std::fabs(sol[idx(i, j)] - sor_update));
                         sol[idx(i, j)] = sor_update;
@@ -326,39 +320,19 @@ int main(int argc, char **argv)
             // Back boundary (if not at domain back boundary)
             if (env.back_neighbor != MPI_PROC_NULL)
             {
+                int i = 0;
                 for (int j = 0; j < subdomain.ny; ++j)
                 {
-                    if ((subdomain.start_x + 0 + subdomain.start_y + j) % 2 == color)
+                    if ((j == 0 && env.left_neighbor != MPI_PROC_NULL) || (j == subdomain.ny - 1 && env.right_neighbor != MPI_PROC_NULL) || (j > 0 && j < subdomain.ny - 1))
                     {
-                        if (j == 0 && env.left_neighbor != MPI_PROC_NULL)
+                        if ((subdomain.start_x + i + subdomain.start_y + j) % 2 == color)
                         {
-                            gs_update = (dy * dy * (received_back_boundary_data[0] + sol[idx(1, 0)]) +
-                                         dx * dx * (received_left_boundary_data[0] + sol[idx(0, 1)]) +
-                                         dx * dx * dy * dy * RHS[idx(0, 0)]) /
-                                        (2 * (dx * dx + dy * dy));
-                            sor_update = sol[idx(0, 0)] + omega * (gs_update - sol[idx(0, 0)]);
-                            maxAbsDiff = std::max(maxAbsDiff, std::fabs(sol[idx(0, 0)] - sor_update));
-                            sol[idx(0, 0)] = sor_update;
-                        }
-                        else if (j == subdomain.ny - 1 && env.right_neighbor != MPI_PROC_NULL)
-                        {
-                            gs_update = (dy * dy * (received_back_boundary_data[subdomain.ny - 1] + sol[idx(1, subdomain.ny - 1)]) +
-                                         dx * dx * (sol[idx(0, subdomain.ny - 2)] + received_right_boundary_data[0]) +
-                                         dx * dx * dy * dy * RHS[idx(0, subdomain.ny - 1)]) /
-                                        (2 * (dx * dx + dy * dy));
-                            sor_update = sol[idx(0, subdomain.ny - 1)] + omega * (gs_update - sol[idx(0, subdomain.ny - 1)]);
-                            maxAbsDiff = std::max(maxAbsDiff, std::fabs(sol[idx(0, subdomain.ny - 1)] - sor_update));
-                            sol[idx(0, subdomain.ny - 1)] = sor_update;
-                        }
-                        else if (j > 0 && j < subdomain.ny - 1)
-                        {
-                            gs_update = (dy * dy * (received_back_boundary_data[j] + sol[idx(1, j)]) +
-                                         dx * dx * (sol[idx(0, j - 1)] + sol[idx(0, j + 1)]) +
-                                         dx * dx * dy * dy * RHS[idx(0, j)]) /
-                                        (2 * (dx * dx + dy * dy));
-                            sor_update = sol[idx(0, j)] + omega * (gs_update - sol[idx(0, j)]);
-                            maxAbsDiff = std::max(maxAbsDiff, std::fabs(sol[idx(0, j)] - sor_update));
-                            sol[idx(0, j)] = sor_update;
+                            gs_update = w1 * (sol[idx(i - 1, j)] + sol[idx(i + 1, j)]) +
+                                        w2 * (sol[idx(i, j - 1)] + sol[idx(i, j + 1)]) +
+                                        w3 * RHS[idx(i, j)];
+                            sor_update = sol[idx(i, j)] + omega * (gs_update - sol[idx(i, j)]);
+                            maxAbsDiff = std::max(maxAbsDiff, std::fabs(sol[idx(i, j)] - sor_update));
+                            sol[idx(i, j)] = sor_update;
                         }
                     }
                 }
@@ -366,39 +340,19 @@ int main(int argc, char **argv)
             // Front boundary (if not at domain front boundary)
             if (env.front_neighbor != MPI_PROC_NULL)
             {
+                int i = subdomain.nx - 1;
                 for (int j = 0; j < subdomain.ny; ++j)
                 {
-                    if ((subdomain.start_x + subdomain.nx - 1 + subdomain.start_y + j) % 2 == color)
+                    if ((j == 0 && env.left_neighbor != MPI_PROC_NULL) || (j == subdomain.ny - 1 && env.right_neighbor != MPI_PROC_NULL) || (j > 0 && j < subdomain.ny - 1))
                     {
-                        if (j == 0 && env.left_neighbor != MPI_PROC_NULL)
+                        if ((subdomain.start_x + i + subdomain.start_y + j) % 2 == color)
                         {
-                            gs_update = (dy * dy * (sol[idx(subdomain.nx - 2, 0)] + received_front_boundary_data[0]) +
-                                         dx * dx * (received_left_boundary_data[subdomain.nx - 1] + sol[idx(subdomain.nx - 1, 1)]) +
-                                         dx * dx * dy * dy * RHS[idx(subdomain.nx - 1, 0)]) /
-                                        (2 * (dx * dx + dy * dy));
-                            sor_update = sol[idx(subdomain.nx - 1, 0)] + omega * (gs_update - sol[idx(subdomain.nx - 1, 0)]);
-                            maxAbsDiff = std::max(maxAbsDiff, std::fabs(sol[idx(subdomain.nx - 1, 0)] - sor_update));
-                            sol[idx(subdomain.nx - 1, 0)] = sor_update;
-                        }
-                        else if (j == subdomain.ny - 1 && env.right_neighbor != MPI_PROC_NULL)
-                        {
-                            gs_update = (dy * dy * (sol[idx(subdomain.nx - 2, subdomain.ny - 1)] + received_front_boundary_data[subdomain.ny - 1]) +
-                                         dx * dx * (sol[idx(subdomain.nx - 1, subdomain.ny - 2)] + received_right_boundary_data[subdomain.nx - 1]) +
-                                         dx * dx * dy * dy * RHS[idx(subdomain.nx - 1, subdomain.ny - 1)]) /
-                                        (2 * (dx * dx + dy * dy));
-                            sor_update = sol[idx(subdomain.nx - 1, subdomain.ny - 1)] + omega * (gs_update - sol[idx(subdomain.nx - 1, subdomain.ny - 1)]);
-                            maxAbsDiff = std::max(maxAbsDiff, std::fabs(sol[idx(subdomain.nx - 1, subdomain.ny - 1)] - sor_update));
-                            sol[idx(subdomain.nx - 1, subdomain.ny - 1)] = sor_update;
-                        }
-                        else if (j > 0 && j < subdomain.ny - 1)
-                        {
-                            gs_update = (dy * dy * (sol[idx(subdomain.nx - 2, j)] + received_front_boundary_data[j]) +
-                                         dx * dx * (sol[idx(subdomain.nx - 1, j - 1)] + sol[idx(subdomain.nx - 1, j + 1)]) +
-                                         dx * dx * dy * dy * RHS[idx(subdomain.nx - 1, j)]) /
-                                        (2 * (dx * dx + dy * dy));
-                            sor_update = sol[idx(subdomain.nx - 1, j)] + omega * (gs_update - sol[idx(subdomain.nx - 1, j)]);
-                            maxAbsDiff = std::max(maxAbsDiff, std::fabs(sol[idx(subdomain.nx - 1, j)] - sor_update));
-                            sol[idx(subdomain.nx - 1, j)] = sor_update;
+                            gs_update = w1 * (sol[idx(i - 1, j)] + sol[idx(i + 1, j)]) +
+                                        w2 * (sol[idx(i, j - 1)] + sol[idx(i, j + 1)]) +
+                                        w3 * RHS[idx(i, j)];
+                            sor_update = sol[idx(i, j)] + omega * (gs_update - sol[idx(i, j)]);
+                            maxAbsDiff = std::max(maxAbsDiff, std::fabs(sol[idx(i, j)] - sor_update));
+                            sol[idx(i, j)] = sor_update;
                         }
                     }
                 }
@@ -406,34 +360,34 @@ int main(int argc, char **argv)
             // Left boundary (if not at domain left boundary)
             if (env.left_neighbor != MPI_PROC_NULL)
             {
+                int j = 0;
                 for (int i = 1; i < subdomain.nx - 1; ++i)
                 {
-                    if ((subdomain.start_x + i + subdomain.start_y + 0) % 2 == color)
+                    if ((subdomain.start_x + i + subdomain.start_y + j) % 2 == color)
                     {
-                        gs_update = (dy * dy * (sol[idx(i - 1, 0)] + sol[idx(i + 1, 0)]) +
-                                     dx * dx * (received_left_boundary_data[i] + sol[idx(i, 1)]) +
-                                     dx * dx * dy * dy * RHS[idx(i, 0)]) /
-                                    (2 * (dx * dx + dy * dy));
-                        sor_update = sol[idx(i, 0)] + omega * (gs_update - sol[idx(i, 0)]);
-                        maxAbsDiff = std::max(maxAbsDiff, std::fabs(sol[idx(i, 0)] - sor_update));
-                        sol[idx(i, 0)] = sor_update;
+                        gs_update = w1 * (sol[idx(i - 1, j)] + sol[idx(i + 1, j)]) +
+                                    w2 * (sol[idx(i, j - 1)] + sol[idx(i, j + 1)]) +
+                                    w3 * RHS[idx(i, j)];
+                        sor_update = sol[idx(i, j)] + omega * (gs_update - sol[idx(i, j)]);
+                        maxAbsDiff = std::max(maxAbsDiff, std::fabs(sol[idx(i, j)] - sor_update));
+                        sol[idx(i, j)] = sor_update;
                     }
                 }
             }
             // Right boundary (if not at domain right boundary)
             if (env.right_neighbor != MPI_PROC_NULL)
             {
+                int j = subdomain.ny - 1;
                 for (int i = 1; i < subdomain.nx - 1; ++i)
                 {
-                    if ((subdomain.start_x + i + subdomain.start_y + subdomain.ny - 1) % 2 == color)
+                    if ((subdomain.start_x + i + subdomain.start_y + j) % 2 == color)
                     {
-                        gs_update = (dy * dy * (sol[idx(i - 1, subdomain.ny - 1)] + sol[idx(i + 1, subdomain.ny - 1)]) +
-                                     dx * dx * (sol[idx(i, subdomain.ny - 2)] + received_right_boundary_data[i]) +
-                                     dx * dx * dy * dy * RHS[idx(i, subdomain.ny - 1)]) /
-                                    (2 * (dx * dx + dy * dy));
-                        sor_update = sol[idx(i, subdomain.ny - 1)] + omega * (gs_update - sol[idx(i, subdomain.ny - 1)]);
-                        maxAbsDiff = std::max(maxAbsDiff, std::fabs(sol[idx(i, subdomain.ny - 1)] - sor_update));
-                        sol[idx(i, subdomain.ny - 1)] = sor_update;
+                        gs_update = w1 * (sol[idx(i - 1, j)] + sol[idx(i + 1, j)]) +
+                                    w2 * (sol[idx(i, j - 1)] + sol[idx(i, j + 1)]) +
+                                    w3 * RHS[idx(i, j)];
+                        sor_update = sol[idx(i, j)] + omega * (gs_update - sol[idx(i, j)]);
+                        maxAbsDiff = std::max(maxAbsDiff, std::fabs(sol[idx(i, j)] - sor_update));
+                        sol[idx(i, j)] = sor_update;
                     }
                 }
             }
